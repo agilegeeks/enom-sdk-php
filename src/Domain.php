@@ -76,7 +76,7 @@ class Domain
 
         $response = $this->parseXMLObject($response);
 
-        if ( ! isset($response->Attributes)) {
+        if (! isset($response->Attributes)) {
             throw new \Exception('Invalid TLD');
         }
 
@@ -233,7 +233,7 @@ class Domain
         return $response;
     }
 
-    public function getList($tab='IOwn', $domain='')
+    public function getList($tab = 'IOwn', $domain = '')
     {
         $response = $this->doGetRequest('GetDomains', [
             'Tab' => $tab,
@@ -511,7 +511,7 @@ class Domain
         return $response;
     }
 
-    public function addDNSSEC($sld, $tld, $alg, $digest, $digestType, $keyTag, $additionalParams=[])
+    public function addDNSSEC($sld, $tld, $alg, $digest, $digestType, $keyTag, $additionalParams = [])
     {
         $params = [
             'sld' => $sld,
@@ -543,14 +543,36 @@ class Domain
             'tld' => $tld
         ];
 
-        $response = $this->doGetRequest('GetDnsSec', $params, $raw = True);
-        $response = (object) parse_ini_string($response, false, INI_SCANNER_RAW);
+        $response = $this->doGetRequest('GetDnsSec', $params);
+        //$response = (object) parse_ini_string($response, false, INI_SCANNER_RAW);
+        $response = $this->parseXMLObject($response);
 
-        if ($response->ErrCount > 0) {
+        if ((int) $response->ErrCount > 0) {
             throw new EnomApiException($response->errors);
         }
 
-        return $response;
+        if (!isset($response->DnsSecData->KeyData)) {
+            return [];
+        }
+
+        $keyData = $response->DnsSecData->KeyData;
+
+        if (is_object($keyData)) {
+            $keyData = [$keyData];
+        }
+
+        if (!is_array($keyData)) {
+            return [];
+        }
+
+        return array_map(function ($item) {
+            return [
+                'keytag' => isset($item->KeyTag) ? (string) $item->KeyTag : '',
+                'alg' => isset($item->Algorithm) ? (string) $item->Algorithm : '',
+                'digest_type' => isset($item->DigestType) ? (string) $item->DigestType : '',
+                'digest' => isset($item->Digest) ? (string) $item->Digest : '',
+            ];
+        }, $keyData);
     }
 
     public function deleteDNSSEC($sld, $tld, $alg, $digest, $digestType, $keyTag)
@@ -619,6 +641,14 @@ class Domain
 
     private function parseXMLObject($object)
     {
+        if ($object instanceof \SimpleXMLElement) {
+            $xml = simplexml_load_string($object->asXML(), 'SimpleXMLElement', LIBXML_NOCDATA);
+
+            if ($xml !== false) {
+                $object = $xml;
+            }
+        }
+
         return json_decode(json_encode($object));
     }
 }
